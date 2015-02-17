@@ -18,7 +18,7 @@ static const double GC_ALIGNED16(half_qnan_and_s32_max[2]) = {0x7FFFFFFF, -0x800
 void Jit64::fp_tri_op(int d, int a, int b, bool reversible, bool single, void (XEmitter::*avxOp)(X64Reg, X64Reg, OpArg),
                       void (XEmitter::*sseOp)(X64Reg, OpArg), UGeckoInstruction inst, bool packed, bool roundRHS)
 {
-	fpr.Lock(d, a, b);
+	auto unlocker = fpr.Autolock(d, a, b);
 	fpr.BindToRegister(d, d == a || d == b || !single);
 	if (roundRHS)
 	{
@@ -50,7 +50,6 @@ void Jit64::fp_tri_op(int d, int a, int b, bool reversible, bool single, void (X
 		}
 	}
 	SetFPRFIfNeeded(inst, fpr.RX(d));
-	fpr.UnlockAll();
 }
 
 // We can avoid calculating FPRF if it's not needed; every float operation resets it, so
@@ -118,7 +117,7 @@ void Jit64::fmaddXX(UGeckoInstruction inst)
 	if (cpu_info.bAtom)
 		packed = false;
 
-	fpr.Lock(a, b, c, d);
+	auto unlocker = fpr.Autolock(a, b, c, d);
 
 	// While we don't know if any games are actually affected (replays seem to work with all the usual
 	// suspects for desyncing), netplay and other applications need absolute perfect determinism, so
@@ -231,7 +230,6 @@ void Jit64::fmaddXX(UGeckoInstruction inst)
 		MOVSD(fpr.RX(d), R(XMM0));
 	}
 	SetFPRFIfNeeded(inst, fpr.RX(d));
-	fpr.UnlockAll();
 }
 
 void Jit64::fsign(UGeckoInstruction inst)
@@ -242,7 +240,7 @@ void Jit64::fsign(UGeckoInstruction inst)
 
 	int d = inst.FD;
 	int b = inst.FB;
-	fpr.Lock(b, d);
+	auto unlocker = fpr.Autolock(b, d);
 	fpr.BindToRegister(d);
 
 	if (d != b)
@@ -264,7 +262,6 @@ void Jit64::fsign(UGeckoInstruction inst)
 		PanicAlert("fsign bleh");
 		break;
 	}
-	fpr.UnlockAll();
 }
 
 void Jit64::fselx(UGeckoInstruction inst)
@@ -278,7 +275,7 @@ void Jit64::fselx(UGeckoInstruction inst)
 	int b = inst.FB;
 	int c = inst.FC;
 
-	fpr.Lock(a, b, c, d);
+	auto unlocker = fpr.Autolock(a, b, c, d);
 	MOVAPD(XMM1, fpr.R(a));
 	PXOR(XMM0, R(XMM0));
 	// This condition is very tricky; there's only one right way to handle both the case of
@@ -299,7 +296,6 @@ void Jit64::fselx(UGeckoInstruction inst)
 	}
 	fpr.BindToRegister(d);
 	MOVSD(fpr.RX(d), R(XMM1));
-	fpr.UnlockAll();
 }
 
 void Jit64::fmrx(UGeckoInstruction inst)
@@ -314,7 +310,7 @@ void Jit64::fmrx(UGeckoInstruction inst)
 	if (d == b)
 		return;
 
-	fpr.Lock(b, d);
+	auto unlocker = fpr.Autolock(b, d);
 
 	if (fpr.IsBound(d))
 	{
@@ -332,8 +328,6 @@ void Jit64::fmrx(UGeckoInstruction inst)
 		fpr.BindToRegister(b, true, false);
 		MOVSD(fpr.R(d), fpr.RX(b));
 	}
-
-	fpr.UnlockAll();
 }
 
 void Jit64::FloatCompare(UGeckoInstruction inst, bool upper)
@@ -359,7 +353,7 @@ void Jit64::FloatCompare(UGeckoInstruction inst, bool upper)
 		output[3 - (next.CRBB & 3)] |= 1 << dst;
 	}
 
-	fpr.Lock(a, b);
+	auto unlocker = fpr.Autolock(a, b);
 	fpr.BindToRegister(b, true, false);
 
 	if (fprf)
@@ -432,7 +426,6 @@ void Jit64::FloatCompare(UGeckoInstruction inst, bool upper)
 	}
 
 	MOV(64, PPCSTATE(cr_val[crf]), R(RSCRATCH));
-	fpr.UnlockAll();
 }
 
 void Jit64::fcmpx(UGeckoInstruction inst)
@@ -451,7 +444,7 @@ void Jit64::fctiwx(UGeckoInstruction inst)
 
 	int d = inst.RD;
 	int b = inst.RB;
-	fpr.Lock(d, b);
+	auto unlocker = fpr.Autolock(d, b);
 	fpr.BindToRegister(d);
 
 	// Intel uses 0x80000000 as a generic error code while PowerPC uses clamping:
@@ -481,7 +474,6 @@ void Jit64::fctiwx(UGeckoInstruction inst)
 	}
 	// d[64+] must not be modified
 	MOVSD(fpr.R(d), XMM0);
-	fpr.UnlockAll();
 }
 
 void Jit64::frspx(UGeckoInstruction inst)
@@ -491,14 +483,13 @@ void Jit64::frspx(UGeckoInstruction inst)
 	int b = inst.FB;
 	int d = inst.FD;
 
-	fpr.Lock(b, d);
+	auto unlocker = fpr.Autolock(b, d);
 	fpr.BindToRegister(d, d == b);
 	if (b != d)
 		MOVAPD(fpr.RX(d), fpr.R(b));
 	ForceSinglePrecisionS(fpr.RX(d), fpr.RX(d));
 	MOVDDUP(fpr.RX(d), fpr.R(d));
 	SetFPRFIfNeeded(inst, fpr.RX(d));
-	fpr.UnlockAll();
 }
 
 void Jit64::frsqrtex(UGeckoInstruction inst)
@@ -510,13 +501,12 @@ void Jit64::frsqrtex(UGeckoInstruction inst)
 	int d = inst.FD;
 
 	gpr.FlushLockX(RSCRATCH_EXTRA);
-	fpr.Lock(b, d);
+	auto unlocker = fpr.Autolock(b, d);
 	fpr.BindToRegister(d);
 	MOVAPD(XMM0, fpr.R(b));
 	CALL((void *)asm_routines.frsqrte);
 	MOVSD(fpr.R(d), XMM0);
 	SetFPRFIfNeeded(inst, fpr.RX(d));
-	fpr.UnlockAll();
 	gpr.UnlockAllX();
 }
 
@@ -529,12 +519,11 @@ void Jit64::fresx(UGeckoInstruction inst)
 	int d = inst.FD;
 
 	gpr.FlushLockX(RSCRATCH_EXTRA);
-	fpr.Lock(b, d);
+	auto unlocker = fpr.Autolock(b, d);
 	fpr.BindToRegister(d);
 	MOVAPD(XMM0, fpr.R(b));
 	CALL((void *)asm_routines.fres);
 	MOVSD(fpr.R(d), XMM0);
 	SetFPRFIfNeeded(inst, fpr.RX(d));
-	fpr.UnlockAll();
 	gpr.UnlockAllX();
 }
