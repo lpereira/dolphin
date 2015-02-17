@@ -218,7 +218,7 @@ static u32 Xor(u32 a, u32 b)
 void Jit64::regimmop(int d, int a, bool binary, u32 value, Operation doop, void (XEmitter::*op)(int, const Gen::OpArg&, const Gen::OpArg&), bool Rc, bool carry)
 {
 	bool needs_test = false;
-	gpr.Lock(d, a);
+	auto unlocker = gpr.Autolock(d, a);
 	// Be careful; addic treats r0 as r0, but addi treats r0 as zero.
 	if (a || binary || carry)
 	{
@@ -260,7 +260,6 @@ void Jit64::regimmop(int d, int a, bool binary, u32 value, Operation doop, void 
 	}
 	if (Rc)
 		ComputeRC(gpr.R(d), needs_test, doop != And || (value & 0x80000000));
-	gpr.UnlockAll();
 }
 
 void Jit64::reg_imm(UGeckoInstruction inst)
@@ -464,18 +463,20 @@ void Jit64::cmpXX(UGeckoInstruction inst)
 	int crf = inst.CRFD;
 	bool merge_branch = CheckMergedBranch(crf);
 
+	auto unlocker = gpr.Autolock();
+
 	OpArg comparand;
 	bool signedCompare;
 	if (inst.OPCD == 31)
 	{
 		// cmp / cmpl
-		gpr.Lock(a, b);
+		unlocker.AlsoUnlock(a, b);
 		comparand = gpr.R(b);
 		signedCompare = (inst.SUBOP10 == 0);
 	}
 	else
 	{
-		gpr.Lock(a);
+		unlocker.AlsoUnlock(a);
 		if (inst.OPCD == 10)
 		{
 			//cmpli
@@ -576,8 +577,6 @@ void Jit64::cmpXX(UGeckoInstruction inst)
 		if (merge_branch)
 			DoMergedBranchCondition();
 	}
-
-	gpr.UnlockAll();
 }
 
 void Jit64::boolX(UGeckoInstruction inst)
@@ -587,6 +586,8 @@ void Jit64::boolX(UGeckoInstruction inst)
 	int a = inst.RA, s = inst.RS, b = inst.RB;
 	bool needs_test = false;
 	_dbg_assert_msg_(DYNA_REC, inst.OPCD == 31, "Invalid boolX");
+
+	auto unlocker = gpr.Autolock();
 
 	if (gpr.R(s).IsImm() && gpr.R(b).IsImm())
 	{
@@ -616,7 +617,7 @@ void Jit64::boolX(UGeckoInstruction inst)
 		{
 			if (a != s)
 			{
-				gpr.Lock(a,s);
+				unlocker.AlsoUnlock(a, s);
 				gpr.BindToRegister(a, false, true);
 				MOV(32, gpr.R(a), gpr.R(s));
 			}
@@ -630,7 +631,7 @@ void Jit64::boolX(UGeckoInstruction inst)
 		{
 			if (a != s)
 			{
-				gpr.Lock(a,s);
+				unlocker.AlsoUnlock(a, s);
 				gpr.BindToRegister(a, false, true);
 				MOV(32, gpr.R(a), gpr.R(s));
 			}
@@ -660,7 +661,7 @@ void Jit64::boolX(UGeckoInstruction inst)
 	}
 	else if ((a == s) || (a == b))
 	{
-		gpr.Lock(a,((a == s) ? b : s));
+		unlocker.AlsoUnlock(a, ((a == s) ? b : s));
 		OpArg operand = ((a == s) ? gpr.R(b) : gpr.R(s));
 		gpr.BindToRegister(a, true, true);
 
@@ -728,7 +729,7 @@ void Jit64::boolX(UGeckoInstruction inst)
 	}
 	else
 	{
-		gpr.Lock(a,s,b);
+		unlocker.AlsoUnlock(a, s, b);
 		gpr.BindToRegister(a, false, true);
 
 		if (inst.SUBOP10 == 28) // andx
@@ -785,7 +786,6 @@ void Jit64::boolX(UGeckoInstruction inst)
 	}
 	if (inst.Rc)
 		ComputeRC(gpr.R(a), needs_test);
-	gpr.UnlockAll();
 }
 
 void Jit64::extsXx(UGeckoInstruction inst)
@@ -815,7 +815,7 @@ void Jit64::subfic(UGeckoInstruction inst)
 	INSTRUCTION_START
 	JITDISABLE(bJITIntegerOff);
 	int a = inst.RA, d = inst.RD;
-	gpr.Lock(a, d);
+	auto unlocker = gpr.Autolock(a, d);
 	gpr.BindToRegister(d, a == d, true);
 	int imm = inst.SIMM_16;
 	if (d == a)
@@ -848,7 +848,6 @@ void Jit64::subfic(UGeckoInstruction inst)
 		// Output carry is inverted
 		FinalizeCarry(CC_NC);
 	}
-	gpr.UnlockAll();
 	// This instruction has no RC flag
 }
 
