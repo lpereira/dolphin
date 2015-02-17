@@ -405,3 +405,9 @@ int RegCache::NumFreeRegisters()
 			count++;
 	return count;
 }
+
+RegCacheAutounlocker::~RegCacheAutounlocker()
+{
+	for (int bit : m_set_regs)
+		m_rc.Unlock(bit);
+}

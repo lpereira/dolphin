@@ -36,6 +36,32 @@ typedef int PReg;
 
 #define NUMXREGS 16
 
+class RegCache;
+
+class RegCacheAutounlocker
+{
+private:
+	RegCache &m_rc;
+	BitSet32 m_set_regs;
+public:
+	template<typename... Reg>
+	RegCacheAutounlocker(RegCache &rc, Reg... regs)
+		: m_rc(rc), m_set_regs{regs...} {}
+
+	void AlsoUnlock(int reg)
+	{
+		m_set_regs[reg] = true;
+	}
+
+	template<typename... Reg>
+	void AlsoUnlock(Reg... regs)
+	{
+		m_set_regs |= BitSet32{regs...};
+	}
+
+	~RegCacheAutounlocker();
+};
+
 class RegCache
 {
 protected:
@@ -109,6 +135,15 @@ public:
 	virtual Gen::OpArg GetDefaultLocation(size_t reg) const = 0;
 
 	// Register locking.
+	RegCacheAutounlocker Autolock()
+	{
+		return RegCacheAutounlocker(*this);
+	}
+	template<typename... T> RegCacheAutounlocker Autolock(T... p)
+	{
+		Lock(p...);
+		return RegCacheAutounlocker(*this, p...);
+	}
 
 	// these are powerpc reg indices
 	template<typename T>
@@ -136,6 +171,11 @@ public:
 	{
 		LockX(first);
 		LockX(args...);
+	}
+
+	void Unlock(int p)
+	{
+		regs[p].locked = false;
 	}
 
 	void UnlockAll();
